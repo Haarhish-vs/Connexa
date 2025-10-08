@@ -106,6 +106,7 @@ const LoginScreen = ({ navigation }) => {
     } else {
       // Navigate to Profile setup if profile is incomplete
       navigation.reset({
+        
         index: 0,
         routes: [{
           name: 'Profile',
