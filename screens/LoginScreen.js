@@ -52,7 +52,7 @@ const LoginScreen = ({ navigation }) => {
       setPasswordError('Password is required');
       isValid = false;
     } else if (password.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+      setPasswordError('password must be at least 6 characters');
       isValid = false;
     } else {
       setPasswordError('');
