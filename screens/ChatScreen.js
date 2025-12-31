@@ -18,6 +18,8 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialIcons, FontAwesome5, Feather } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useFonts } from 'expo-font';
 import { auth, db } from '../services/FireBase';
@@ -54,10 +56,18 @@ const ChatScreen = ({ route, navigation }) => {
   const [otherUserOnline, setOtherUserOnline] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [typingTimeout, setTypingTimeout] = useState(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const windowHeight = Dimensions.get('window').height;
   const [screenData, setScreenData] = useState(Dimensions.get('window'));
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+  const [composerHeight, setComposerHeight] = useState(64);
+  const bottomGutter = Math.max(insets.bottom, 12);
+  const listBottomPadding = bottomGutter + composerHeight + 8;
+  const keyboardVerticalOffset = Platform.select({
+    ios: headerHeight,
+    android: headerHeight + insets.top,
+    default: headerHeight,
+  });
   
   const flatListRef = useRef();
   
@@ -111,8 +121,6 @@ const ChatScreen = ({ route, navigation }) => {
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
       (event) => {
-        setKeyboardVisible(true);
-        setKeyboardHeight(event.endCoordinates.height);
         // Scroll to bottom when keyboard appears
         if (flatListRef.current) {
           setTimeout(() => {
@@ -125,8 +133,6 @@ const ChatScreen = ({ route, navigation }) => {
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',
       () => {
-        setKeyboardVisible(false);
-        setKeyboardHeight(0);
       }
     );
 
@@ -274,6 +280,13 @@ const ChatScreen = ({ route, navigation }) => {
     }, 3000);
     
     setTypingTimeout(timeout);
+  };
+
+  const handleComposerLayout = ({ nativeEvent }) => {
+    const nextHeight = Math.round(nativeEvent.layout.height);
+    if (Math.abs(nextHeight - composerHeight) > 2) {
+      setComposerHeight(nextHeight);
+    }
   };
   
   // Update typing status in Firestore
@@ -1217,133 +1230,144 @@ const ChatScreen = ({ route, navigation }) => {
   }
   
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      
-      {/* WhatsApp-style Attachment Modal */}
-      <ChatAttachmentModal
-        visible={showMediaOptions}
-        onClose={closeMediaOptions}
-        onAttachmentSelected={handleAttachmentSelected}
-        isDark={isDark}
-      />
-      
-      {/* Messages Container */}
-      <View style={[styles.messagesContainer]}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={theme.primary} />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            style={styles.messagesList}
-            contentContainerStyle={[styles.messagesContent, { paddingBottom: 20 }]}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-            onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item, index }) => (
-              <View>
-                {showDateHeader(item, index) && (
-                  <View style={styles.dateHeaderContainer}>
-                    <Text style={[styles.dateHeaderText, { color: theme.subText }]}>
-                      {formatDateHeader(item.createdAt)}
-                    </Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={keyboardVerticalOffset}
+      >
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          
+          {/* WhatsApp-style Attachment Modal */}
+          <ChatAttachmentModal
+            visible={showMediaOptions}
+            onClose={closeMediaOptions}
+            onAttachmentSelected={handleAttachmentSelected}
+            isDark={isDark}
+          />
+          
+          {/* Messages Container */}
+          <View style={styles.messagesContainer}>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                keyExtractor={(item) => item.id}
+                style={styles.messagesList}
+                contentContainerStyle={[styles.messagesContent, { paddingBottom: listBottomPadding }]}
+                keyboardShouldPersistTaps="handled"
+                onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item, index }) => (
+                  <View>
+                    {showDateHeader(item, index) && (
+                      <View style={styles.dateHeaderContainer}>
+                        <Text style={[styles.dateHeaderText, { color: theme.subText }]}>
+                          {formatDateHeader(item.createdAt)}
+                        </Text>
+                      </View>
+                    )}
+                    <ChatMessage
+                      message={item}
+                      isOwn={item.senderId === user.uid}
+                      timestamp={item.createdAt}
+                      senderName={item.senderId !== user.uid ? (otherUser.displayName || otherUser.email || 'Unknown') : null}
+                      onMessageLongPress={handleMessageLongPress}
+                      currentUserId={user?.uid}
+                    />
                   </View>
                 )}
-                <ChatMessage
-                  message={item}
-                  isOwn={item.senderId === user.uid}
-                  timestamp={item.createdAt}
-                  senderName={item.senderId !== user.uid ? (otherUser.displayName || otherUser.email || 'Unknown') : null}
-                  onMessageLongPress={handleMessageLongPress}
-                  currentUserId={user?.uid}
-                />
-              </View>
+              />
             )}
-          />
-        )}
-      </View>
-      
-      {/* Input Container - Fixed at bottom with KeyboardAvoidingView */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
-        <View style={[styles.inputContainer, { 
-          backgroundColor: isDark ? '#1C1C1E' : '#f2f2f7',
-          borderColor: isDark ? '#333' : '#e5e5ea'
-        }]}>
-          <View style={styles.inputWrapper}>
-            {/* Media sharing button with + icon */}
-            <TouchableOpacity 
-              style={[styles.mediaShareButton, { 
-                backgroundColor: isDark ? '#0E7C42' : '#25D366' 
-              }]}
-              onPress={handleMediaPick}
-              disabled={isUploading}
-              activeOpacity={0.8}
-            >
-              {isUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons name="add" size={20} color="#fff" />
-              )}
-            </TouchableOpacity>
-
-            {/* Camera button */}
-            <TouchableOpacity 
-              style={[styles.cameraOnlyButton, { 
-                backgroundColor: isDark ? '#444' : '#e9ecef' 
-              }]}
-              onPress={handleQuickCamera}
-              disabled={isUploading}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="camera" size={18} color={isDark ? '#fff' : '#666'} />
-            </TouchableOpacity>
-            
-            <TextInput
-              style={[styles.input, { 
-                color: theme.text,
-                backgroundColor: isDark ? '#2C2C2E' : '#fff'
-              }]}
-              placeholder="Type a message..."
-              placeholderTextColor={theme.subText}
-              value={inputMessage}
-              onChangeText={handleInputChange}
-              multiline
-              maxLength={1000}
-              returnKeyType="default"
-              blurOnSubmit={false}
-            />
-            
-            {inputMessage.trim() ? (
-              <TouchableOpacity
-                style={[styles.sendButton, { backgroundColor: theme.primary }]}
-                onPress={sendMessage}
+          </View>
+          
+          {/* Input Container fixed to keyboard */}
+          <View
+            style={[styles.inputContainer, {
+            backgroundColor: isDark ? '#1C1C1E' : '#f2f2f7',
+            borderColor: isDark ? '#333' : '#e5e5ea',
+            paddingBottom: bottomGutter,
+            }]}
+            onLayout={handleComposerLayout}
+          >
+            <View style={styles.inputWrapper}>
+              {/* Media sharing button with + icon */}
+              <TouchableOpacity 
+                style={[styles.mediaShareButton, { 
+                  backgroundColor: isDark ? '#0E7C42' : '#25D366' 
+                }]}
+                onPress={handleMediaPick}
                 disabled={isUploading}
+                activeOpacity={0.8}
               >
-                <Ionicons name="send" size={18} color="#fff" />
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="add" size={20} color="#fff" />
+                )}
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.recordButton]}
-                onPress={() => Alert.alert('Voice Messages', 'Voice message recording coming soon!')}
+
+              {/* Camera button */}
+              <TouchableOpacity 
+                style={[styles.cameraOnlyButton, { 
+                  backgroundColor: isDark ? '#444' : '#e9ecef' 
+                }]}
+                onPress={handleQuickCamera}
+                disabled={isUploading}
+                activeOpacity={0.8}
               >
-                <Ionicons name="mic-outline" size={24} color={theme.primary} />
+                <Ionicons name="camera" size={18} color={isDark ? '#fff' : '#666'} />
               </TouchableOpacity>
-            )}
+              
+              <TextInput
+                style={[styles.input, { 
+                  color: theme.text,
+                  backgroundColor: isDark ? '#2C2C2E' : '#fff'
+                }]}
+                placeholder="Type a message..."
+                placeholderTextColor={theme.subText}
+                value={inputMessage}
+                onChangeText={handleInputChange}
+                multiline
+                maxLength={1000}
+                returnKeyType="default"
+                blurOnSubmit={false}
+              />
+              
+              {inputMessage.trim() ? (
+                <TouchableOpacity
+                  style={[styles.sendButton, { backgroundColor: theme.primary }]}
+                  onPress={sendMessage}
+                  disabled={isUploading}
+                >
+                  <Ionicons name="send" size={18} color="#fff" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.recordButton}
+                  onPress={() => Alert.alert('Voice Messages', 'Voice message recording coming soon!')}
+                >
+                  <Ionicons name="mic-outline" size={24} color={theme.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     paddingTop: Platform.OS === 'android' ? 25 : 0, // Account for status bar on Android
